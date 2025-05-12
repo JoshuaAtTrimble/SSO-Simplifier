@@ -87,6 +87,9 @@ func ScanForSSOs(directory string) (ServerSideObjectList, error) {
 					}
 				}
 
+				// Append superclass methods to declaredMethods from sso_super.go
+				declaredMethods = append(declaredMethods, SuperclassMethods...)
+
 				// Create a new ServerSideObject and append it to the list
 				matchingFiles = append(matchingFiles, ServerSideObject{
 					FilePath:        path,
