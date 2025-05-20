@@ -30,6 +30,14 @@ func WriteSimplifiedSSO(outputDir string, sso *ServerSideObject) error {
 		return err
 	}
 
+	// Write public fields before constructor and methods
+	for _, field := range sso.DeclaredFields {
+		line := "    public " + field.Type + " " + field.Name + ";\n\n"
+		if _, err := file.WriteString(line); err != nil {
+			return err
+		}
+	}
+
 	// Write the empty public constructor
 	if _, err := file.WriteString("    public " + sso.ClassName + "() {}\n\n"); err != nil {
 		return err

@@ -5,12 +5,19 @@ import (
 	"fmt"
 )
 
-// ServerSideObject represents a Java file with its path, name, and declared methods.
+// PublicField represents a Java public property (field) declaration.
+type PublicField struct {
+	Type string // The type of the field
+	Name string // The name of the field
+}
+
+// ServerSideObject represents a Java file with its path, name, declared methods, and fields.
 type ServerSideObject struct {
 	FilePath        string         // The absolute or relative path of the file
 	ClassName       string         // The name of the class
 	PackageLine     string         // The package line of the Java file
 	DeclaredMethods []PublicMethod // The declared methods of the class
+	DeclaredFields  []PublicField  // The declared public fields of the class
 }
 
 // PublicMethod represents a Java method signature broken into elements.
@@ -34,10 +41,12 @@ var allowedTypes = map[string]string{
 	"char":    "'\\0'",
 	"short":   "0",
 	"int":     "0",
+	"Integer": "0",
 	"long":    "0L",
 	"float":   "0.0f",
 	"double":  "0.0",
 	"String":  "null",
+	"void":    "null",
 }
 
 // ServerSideObjectList is a custom type that implements sort.Interface for []ServerSideObject.

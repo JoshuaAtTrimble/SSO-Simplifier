@@ -15,8 +15,10 @@ var (
 	packagePattern = regexp.MustCompile(`package ([a-zA-Z0-9_.]+);`)
 	// classPattern matches public class declarations extending ServerSideObject in normalized content
 	classPattern = regexp.MustCompile(`public class [a-zA-Z0-9_$]+ extends ServerSideObject`)
-	// methodPattern matches public method declarations in normalized content
-	methodPattern = regexp.MustCompile(`public ([a-zA-Z0-9_$<>\[\]]+) ([a-zA-Z0-9_$]+)\(([^)]*)\)`)
+	// methodPattern matches public method declarations in normalized content, allowing for extra whitespace
+	methodPattern = regexp.MustCompile(`public\s+([a-zA-Z0-9_$<>\[\]]+)\s+([a-zA-Z0-9_$]+)\s*\(([^)]*)\)`)
+	// publicFieldPattern matches public field declarations with optional modifiers, type, name, and optional initializer
+	publicFieldPattern = regexp.MustCompile(`public(?:\s+(?:static|final|transient|volatile))*\s+([a-zA-Z0-9_$\[\]]+)\s+([a-zA-Z0-9_$]+)(?:\s*=\s*[^;]+)?;`)
 )
 
 // ScanForSSOs scans .java files in the given directory and returns a list of files that contain an SSO.
@@ -66,11 +68,18 @@ func ScanForSSOs(directory string) (ServerSideObjectList, error) {
 				}
 				classContent := normalizedContent[classStart : classEnd+1]
 
+				// Remove any private classes from classContent before extracting public methods
+				classContent = removePrivateClasses(classContent)
+
 				// Extract public methods within the class definition
 				methodMatches := methodPattern.FindAllStringSubmatch(classContent, -1)
 				var declaredMethods []PublicMethod
 				for _, match := range methodMatches {
 					if len(match) >= 4 {
+						// Check if return type is allowed
+						if _, ok := allowedTypes[match[1]]; !ok {
+							continue // Skip this method if return type is not allowed
+						}
 						parameters := extractParameters(match[3])
 
 						// Check if all parameter types are valid
@@ -87,6 +96,18 @@ func ScanForSSOs(directory string) (ServerSideObjectList, error) {
 					}
 				}
 
+				// Extract public fields within the class definition
+				fieldMatches := publicFieldPattern.FindAllStringSubmatch(classContent, -1)
+				var declaredFields []PublicField
+				for _, match := range fieldMatches {
+					if len(match) >= 3 {
+						declaredFields = append(declaredFields, PublicField{
+							Type: match[1],
+							Name: match[2],
+						})
+					}
+				}
+
 				// Append superclass methods to declaredMethods from sso_super.go
 				declaredMethods = append(declaredMethods, SuperclassMethods...)
 
@@ -96,6 +117,7 @@ func ScanForSSOs(directory string) (ServerSideObjectList, error) {
 					ClassName:       className,
 					PackageLine:     packageLine,
 					DeclaredMethods: declaredMethods,
+					DeclaredFields:  declaredFields,
 				})
 
 				// Pretty print the added ServerSideObject
@@ -121,10 +143,20 @@ func extractParameters(paramString string) []Parameter {
 	paramPairs := strings.Split(paramString, ",")
 	for _, pair := range paramPairs {
 		parts := strings.Fields(strings.TrimSpace(pair))
-		if len(parts) == 2 {
+		if len(parts) >= 2 {
+			// Remove allowed parameter modifiers (final, annotations)
+			j := 0
+			for j < len(parts)-2 {
+				if parts[j] == "final" || strings.HasPrefix(parts[j], "@") {
+					j++
+				} else {
+					break
+				}
+			}
+			// The type is at parts[j], the name is at parts[j+1]
 			parameters = append(parameters, Parameter{
-				Type: parts[0],
-				Name: parts[1],
+				Type: parts[j],
+				Name: parts[j+1],
 			})
 		}
 	}
@@ -139,4 +171,39 @@ func areParametersValid(parameters []Parameter) bool {
 		}
 	}
 	return true
+}
+
+// removePrivateClasses removes all private class definitions (with nested braces) from the input string.
+func removePrivateClasses(input string) string {
+	for {
+		startIdx := strings.Index(input, "private class ")
+		if startIdx == -1 {
+			break
+		}
+		// Find the opening brace for the class
+		braceIdx := strings.Index(input[startIdx:], "{")
+		if braceIdx == -1 {
+			break
+		}
+		braceIdx += startIdx
+		// Use a counter to find the matching closing brace
+		count := 1
+		endIdx := braceIdx + 1
+		for endIdx < len(input) && count > 0 {
+			if input[endIdx] == '{' {
+				count++
+			} else if input[endIdx] == '}' {
+				count--
+			}
+			endIdx++
+		}
+		// Remove the private class definition
+		if count == 0 {
+			input = input[:startIdx] + input[endIdx:]
+		} else {
+			// Unmatched braces, break to avoid infinite loop
+			break
+		}
+	}
+	return input
 }
